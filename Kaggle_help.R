@@ -96,3 +96,173 @@ getTitle <- function(data) {
 }   
 df.train$Title <- getTitle(df.train)
 unique(df.train$Title)
+
+options(digits=2)
+require(Hmisc)
+bystats(df.train$Age, df.train$Title, 
+        fun=function(x)c(Mean=mean(x),Median=median(x)))
+
+titles.na.train <- c("Dr", "Master", "Mrs", "Miss", "Mr")
+
+imputeMedian <- function(impute.var, filter.var, var.levels) {
+  for (v in var.levels) {
+    impute.var[ which( filter.var == v)] <- impute(impute.var[ 
+      which( filter.var == v)])
+  }
+  return (impute.var)
+}
+df.train$Age[which(df.train$Title=="Dr")]
+df.train$Age <- imputeMedian(df.train$Age, df.train$Title, 
+                             titles.na.train)
+df.train$Age[which(df.train$Title=="Dr")]
+summary(df.train$Age)
+summary(df.train$Embarked)
+df.train$Embarked[which(is.na(df.train$Embarked))] <- 'S'
+summary(df.train$Fare)
+subset(df.train, Fare < 7)[order(subset(df.train, Fare < 7)$Fare, 
+                                 subset(df.train, Fare < 7)$Pclass), 
+                           c("Age", "Title", "Pclass", "Fare")]
+df.train$Fare[ which( df.train$Fare == 0 )] <- NA
+df.train$Fare <- imputeMedian(df.train$Fare, df.train$Pclass, 
+                              as.numeric(levels(df.train$Pclass)))
+df.train$Title <- factor(df.train$Title,
+                         c("Capt","Col","Major","Sir","Lady","Rev",
+                           "Dr","Don","Jonkheer","the Countess","Mrs",
+                           "Ms","Mr","Mme","Mlle","Miss","Master"))
+boxplot(df.train$Age ~ df.train$Title, 
+        main="Passenger Age by Title", xlab="Title", ylab="Age")
+
+changeTitles <- function(data, old.titles, new.title) {
+  for (honorific in old.titles) {
+    data$Title[ which( data$Title == honorific)] <- new.title
+  }
+  return (data$Title)
+}
+
+## Title consolidation
+df.train$Title <- changeTitles(df.train, 
+                               c("Capt", "Col", "Don", "Dr", 
+                                 "Jonkheer", "Lady", "Major", 
+                                 "Rev", "Sir"),
+                               "Noble")
+df.train$Title <- changeTitles(df.train, c("the Countess", "Ms"), 
+                               "Mrs")
+df.train$Title <- changeTitles(df.train, c("Mlle", "Mme"), "Miss")
+df.train$Title <- as.factor(df.train$Title)
+
+require(plyr)     # for the revalue function 
+require(stringr)  # for the str_sub function
+
+## test a character as an EVEN single digit
+isEven <- function(x) x %in% c("0","2","4","6","8") 
+## test a character as an ODD single digit
+isOdd <- function(x) x %in% c("1","3","5","7","9") 
+
+## function to add features to training or test data frames
+featureEngrg <- function(data) {
+  ## Using Fate ILO Survived because term is shorter and just sounds good
+  data$Fate <- data$Survived
+  ## Revaluing Fate factor to ease assessment of confusion matrices later
+  data$Fate <- revalue(data$Fate, c("1" = "Survived", "0" = "Perished"))
+  ## Boat.dibs attempts to capture the "women and children first"
+  ## policy in one feature.  Assuming all females plus males under 15
+  ## got "dibs' on access to a lifeboat
+  data$Boat.dibs <- "No"
+  data$Boat.dibs[which(data$Sex == "female" | data$Age < 15)] <- "Yes"
+  data$Boat.dibs <- as.factor(data$Boat.dibs)
+  ## Family consolidates siblings and spouses (SibSp) plus
+  ## parents and children (Parch) into one feature
+  data$Family <- data$SibSp + data$Parch
+  ## Fare.pp attempts to adjust group purchases by size of family
+  data$Fare.pp <- data$Fare/(data$Family + 1)
+  ## Giving the traveling class feature a new look
+  data$Class <- data$Pclass
+  data$Class <- revalue(data$Class, 
+                        c("1"="First", "2"="Second", "3"="Third"))
+  ## First character in Cabin number represents the Deck 
+  data$Deck <- substring(data$Cabin, 1, 1)
+  data$Deck[ which( is.na(data$Deck ))] <- "UNK"
+  data$Deck <- as.factor(data$Deck)
+  ## Odd-numbered cabins were reportedly on the port side of the ship
+  ## Even-numbered cabins assigned Side="starboard"
+  data$cabin.last.digit <- str_sub(data$Cabin, -1)
+  data$Side <- "UNK"
+  data$Side[which(isEven(data$cabin.last.digit))] <- "port"
+  data$Side[which(isOdd(data$cabin.last.digit))] <- "starboard"
+  data$Side <- as.factor(data$Side)
+  data$cabin.last.digit <- NULL
+  return (data)
+}
+
+## add remaining features to training data frame
+df.train <- featureEngrg(df.train)
+
+train.keeps <- c("Fate", "Sex", "Boat.dibs", "Age", "Title", 
+                 "Class", "Deck", "Side", "Fare", "Fare.pp", 
+                 "Embarked", "Family")
+df.train.munged <- df.train[train.keeps]
+
+
+#-----------------Fitting a Model
+set.seed(23)
+training.rows <- createDataPartition(df.train.munged$Fate,p = 0.8, list = FALSE)
+train.batch <- df.train.munged[training.rows, ]
+test.batch <- df.train.munged[-training.rows, ]
+
+Titanic.logit.1 <- glm(Fate ~ Sex + Class + Age + Family + Embarked + Fare, 
+                       data = train.batch, family=binomial("logit"))
+Titanic.logit.1
+1.0 - pchisq(332.2, df=8)
+anova(Titanic.logit.1, test="Chisq")
+
+Titanic.logit.2 <- glm(Fate ~ Sex + Class + Age + Family + Embarked + Fare.pp,                        
+                       data = train.batch, family=binomial("logit"))
+anova(Titanic.logit.2, test="Chisq")
+
+glm(Fate ~ Sex + Class + Age + Family + Embarked, 
+      data = train.batch, family=binomial("logit"))
+
+#------------CARET
+cv.ctrl <- trainControl(method = "repeatedcv", repeats = 3,
+                        summaryFunction = twoClassSummary,
+                        classProbs = TRUE)
+set.seed(35)
+glm.tune.1 <- train(Fate ~ Sex + Class + Age + Family + Embarked,
+                    data = train.batch,
+                    method = "glm",
+                    metric = "ROC",
+                    trControl = cv.ctrl)
+#glm.tune.1
+summary(glm.tune.1)
+
+
+set.seed(35)
+glm.tune.2 <- train(Fate ~ Sex + Class + Age + Family + I(Embarked=="S"),
+                      data = train.batch, method = "glm",
+                      metric = "ROC", trControl = cv.ctrl)
+summary(glm.tune.2)
+
+set.seed(35)
+glm.tune.3 <- train(Fate ~ Sex + Class + Title + Age 
+                      + Family + I(Embarked=="S"), 
+                      data = train.batch, method = "glm",
+                      metric = "ROC", trControl = cv.ctrl)
+summary(glm.tune.3)
+
+set.seed(35)
+glm.tune.4 <- train(Fate ~ Class + I(Title=="Mr") + I(Title=="Noble") 
+                      + Age + Family + I(Embarked=="S"), 
+                      data = train.batch, method = "glm",
+                      metric = "ROC", trControl = cv.ctrl)
+summary(glm.tune.4)
+
+set.seed(35)
+glm.tune.5 <- train(Fate ~ Class + I(Title=="Mr") + I(Title=="Noble") 
+                      + Age + Family + I(Embarked=="S") 
+                      + I(Title=="Mr"&Class=="Third"), 
+                      data = train.batch, 
+                      method = "glm", metric = "ROC", 
+                      trControl = cv.ctrl)
+summary(glm.tune.5)
+
+#-------------------Other Models
