@@ -259,17 +259,17 @@ summary(glm.tune.5)
 
 
 #### Other Models
-Logistic regression is certainly not the only binary classification model available.  There are plenty more –- perhaps too many for some data scientists to digest.  For purpose of illustration, I'll simply take the logistic regression model formula from **glm.tune.1** and pass it through  ``` train()``` for each of three other model types, with one new twist:  tuning variables specific to each model.   
+#Logistic regression is certainly not the only binary classification model available.  There are plenty more –- perhaps too many for some data scientists to digest.  For purpose of illustration, I'll simply take the logistic regression model formula from **glm.tune.1** and pass it through  ``` train()``` for each of three other model types, with one new twist:  tuning variables specific to each model.   
 
-First up is [boosting](http://en.wikipedia.org/wiki/AdaBoost).  I can instruct ``` train``` to fit a *stochastic boosting* model for the binary response **Fate** using the ``` ada```package and a range of values for each of three tuning parameters.  Concretely, when fitting a model using ``` train``` with ``` method=”ada”```, one has three levers to tweak: ``` iter``` (number of boosting iterations, default=50), ``` maxdepth``` (depth of trees), and ``` nu``` (shrinkage parameter, default=1).  Create a data frame with these three variables as column names and one row per tuning variable combination, and you're good to go.  Here is just one example of a tuning grid for ``` ada```:
-```sh
+#First up is [boosting](http://en.wikipedia.org/wiki/AdaBoost).  I can instruct ``` train``` to fit a *stochastic boosting* model for the binary response **Fate** using the ``` ada```package and a range of values for each of three tuning parameters.  Concretely, when fitting a model using ``` train``` with ``` method=”ada”```, one has three levers to tweak: ``` iter``` (number of boosting iterations, default=50), ``` maxdepth``` (depth of trees), and ``` nu``` (shrinkage parameter, default=1).  Create a data frame with these three variables as column names and one row per tuning variable combination, and you're good to go.  Here is just one example of a tuning grid for ``` ada```:
+#```sh
 ## note the dot preceding each variable
 ada.grid <- expand.grid(.iter = c(50, 100),
                         .maxdepth = c(4, 8),
                         .nu = c(0.1, 1))
-```
-Specify ``` method=”ada”``` and ``` tuneGrid=ada.grid``` in ``` train```, and away we go...
-```sh
+#```
+#Specify ``` method=”ada”``` and ``` tuneGrid=ada.grid``` in ``` train```, and away we go...
+#```sh
 set.seed(35)
 ada.tune <- train(Fate ~ Sex + Class + Age + Family + Embarked, 
                   data = train.batch,
@@ -277,35 +277,12 @@ ada.tune <- train(Fate ~ Sex + Class + Age + Family + Embarked,
                   metric = "ROC",
                   tuneGrid = ada.grid,
                   trControl = cv.ctrl)
-```
-The model output shows that, given the **train.batch** data and 8 combinations of tuning variables tested,  the optimal model had an ROC of 0.871.  The tuning parameter values used to build that model were ``` iter = 100```, ``` maxdepth = 4```, and ``` nu = 0.1```. 
-```sh
-> ada.tune
-714 samples
- 11 predictors
-  2 classes: 'Perished', 'Survived' 
+#```
+#The model output shows that, given the **train.batch** data and 8 combinations of tuning variables tested,  the optimal model had an ROC of 0.871.  The tuning parameter values used to build that model were ``` iter = 100```, ``` maxdepth = 4```, and ``` nu = 0.1```. 
+#```sh
+ada.tune
 
-No pre-processing
-Resampling: Cross-Validation (10 fold, repeated 3 times) 
-
-Summary of sample sizes: 642, 643, 643, 642, 642, 643, ... 
-
-Resampling results across tuning parameters:
-
-  iter  maxdepth  nu   ROC    Sens   Spec   ROC SD  Sens SD  Spec SD
-  50    4         0.1  0.869  0.931  0.666  0.061   0.046    0.0784 
-  50    4         1    0.855  0.907  0.703  0.0572  0.046    0.09   
-  50    8         0.1  0.864  0.919  0.685  0.0571  0.0457   0.085  
-  50    8         1    0.846  0.88   0.716  0.0559  0.0482   0.0944 
-  100   4         0.1  0.871  0.923  0.679  0.0609  0.0449   0.0829 
-  100   4         1    0.855  0.896  0.707  0.0559  0.0552   0.0884 
-  100   8         0.1  0.867  0.919  0.7    0.0597  0.0429   0.0767 
-  100   8         1    0.837  0.879  0.709  0.0646  0.0561   0.0908 
-
-ROC was used to select the optimal model using  the largest value.
-The final values used for the model were iter = 100, maxdepth = 4 and nu = 0.1.
-
-> plot(ada.tune)     ## ada accuracy profile
+plot(ada.tune)     ## ada accuracy profile
 ```
 ![alt text](http://drive.google.com/uc?export=view&id=0B-yx9UUIpB6uLWhoNGJXVlJzLUU)
 
